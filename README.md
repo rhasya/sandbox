@@ -1,2 +1,2 @@
 # sandbox
-## online judge sandbox
+online judge sandbox
