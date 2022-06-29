@@ -33,6 +33,10 @@ func init() {
 }
 
 func tempInit() {
+	log.Printf("[%d] new namespace. parent=%d\n", os.Getpid(), os.Getppid())
+	// set hostname
+	_ = syscall.Sethostname([]byte("sbox"))
+
 	// This is another file
 	solution := os.Args[1]
 	timeLimit, _ := strconv.Atoi(os.Args[2])
@@ -41,8 +45,10 @@ func tempInit() {
 	infile, _ := os.OpenFile("input.txt", os.O_RDONLY, 0744)
 	outfile, _ := os.OpenFile("output.txt", os.O_WRONLY|os.O_CREATE, 0755)
 
-	defer infile.Close()
-	defer outfile.Close()
+	defer func() {
+		_ = infile.Close()
+		_ = outfile.Close()
+	}()
 
 	cmd := exec.Command(solution)
 	cmd.Stdin = infile
@@ -86,7 +92,7 @@ func main() {
 
 	// add to cgroup
 	initCGroup(os.Getpid())
-
+	log.Printf("[%d] current namespace. parent=%d\n", os.Getpid(), os.Getppid())
 	cmd := reexec.Command("runner", "./temp/a", "5000")
 	cmd.Stdout = &outbuf
 	cmd.Stderr = os.Stderr
