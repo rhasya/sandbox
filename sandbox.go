@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/pkg/reexec"
+	"github.com/rhasya/sandbox/ns"
 )
 
 type Result struct {
@@ -22,7 +23,7 @@ type Result struct {
 }
 
 func init() {
-	reexec.Register("runner", tempInit)
+	reexec.Register("runner", runner)
 
 	// it call folk
 	// first time => return false
@@ -32,12 +33,10 @@ func init() {
 	}
 }
 
-func tempInit() {
-	log.Printf("[%d] new namespace. parent=%d\n", os.Getpid(), os.Getppid())
-	// set hostname
-	_ = syscall.Sethostname([]byte("sbox"))
+func runner() {
+	log.Println("Init namespace")
+	ns.InitNamespace()
 
-	// This is another file
 	solution := os.Args[1]
 	timeLimit, _ := strconv.Atoi(os.Args[2])
 
@@ -50,6 +49,7 @@ func tempInit() {
 		_ = outfile.Close()
 	}()
 
+	// prepare command
 	cmd := exec.Command(solution)
 	cmd.Stdin = infile
 	cmd.Stdout = outfile
@@ -87,13 +87,12 @@ func tempInit() {
 }
 
 func main() {
-
 	var outbuf bytes.Buffer
 
 	// add to cgroup
 	initCGroup(os.Getpid())
 	log.Printf("[%d] current namespace. parent=%d\n", os.Getpid(), os.Getppid())
-	cmd := reexec.Command("runner", "./temp/a", "5000")
+	cmd := reexec.Command("runner", "/main", "5000")
 	cmd.Stdout = &outbuf
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -134,23 +133,17 @@ func main() {
 
 func initCGroup(pid int) {
 	pidStr := strconv.Itoa(pid)
-	defaultPath := "/sys/fs/cgroup/memory/sboxg/"
+	defaultPath := "/sys/fs/cgroup/memory/sandg/"
 
 	// write to mem limit to file
-	e1 := os.WriteFile(defaultPath+"memory.kmem.limit_in_bytes", []byte("256m"), 0644)
-	if e1 != nil {
-		log.Fatal("e1 " + e1.Error())
+	_ = os.WriteFile(defaultPath+"memory.kmem.limit_in_bytes", []byte("256m"), 0644)
+	e3 := os.WriteFile(defaultPath+"memory.limit_in_bytes", []byte("256m"), 0644)
+	if e3 != nil {
+		log.Fatal("e3 " + e3.Error())
 	}
 	e2 := os.WriteFile(defaultPath+"memory.memsw.limit_in_bytes", []byte("256m"), 0644)
 	if e2 != nil {
 		log.Fatal("e2 " + e2.Error())
 	}
-	e3 := os.WriteFile(defaultPath+"memory.limit_in_bytes", []byte("256m"), 0644)
-	if e3 != nil {
-		log.Fatal("e3 " + e2.Error())
-	}
-	e4 := os.WriteFile(defaultPath+"tasks", []byte(pidStr), 0644)
-	if e4 != nil {
-		log.Fatal("e4 " + e4.Error())
-	}
+	_ = os.WriteFile(defaultPath+"tasks", []byte(pidStr), 0644)
 }
