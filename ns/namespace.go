@@ -6,18 +6,22 @@ import (
 	"syscall"
 )
 
-func InitNamespace() {
-	pivotRoot()
+func InitNamespace(newRoot string) {
+	pivotRoot(newRoot)
 
 	// set Hostname
 	if e := syscall.Sethostname([]byte("snowbox")); e != nil {
 		log.Fatal("SetHostname: " + e.Error())
 	}
+
+	// move to working directory
+	//if e := os.Chdir("/tmp/snowbox"); e != nil {
+	//	log.Fatal("Chdir: " + e.Error())
+	//}
 }
 
-func pivotRoot() {
+func pivotRoot(newRoot string) {
 	// reference : https://manpages.ubuntu.com/manpages/impish/man2/pivot_root.2.html
-	newRoot := "/tmp/snowbox"
 	oldPath := "/oldrootfs"
 
 	if e := syscall.Mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); e != nil {
