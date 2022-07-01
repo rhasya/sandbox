@@ -25,9 +25,7 @@ type Result struct {
 func init() {
 	reexec.Register("runner", runner)
 
-	// it call folk
-	// first time => return false
-	// second time => return true
+	// clone
 	if reexec.Init() {
 		os.Exit(0)
 	}
@@ -35,27 +33,40 @@ func init() {
 
 func runner() {
 	log.Println("Init namespace")
-	ns.InitNamespace()
+	ns.InitNamespace("/tmp/snowbox")
 
-	solution := os.Args[1]
+	lang := os.Args[1]
 	timeLimit, _ := strconv.Atoi(os.Args[2])
 
 	var errbuf bytes.Buffer
-	infile, _ := os.OpenFile("input.txt", os.O_RDONLY, 0744)
-	outfile, _ := os.OpenFile("output.txt", os.O_WRONLY|os.O_CREATE, 0755)
+	infile, _ := os.OpenFile("/tmp/input.txt", os.O_RDONLY, 0644)
+	outfile, _ := os.OpenFile("/tmp/output.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 
 	defer func() {
 		_ = infile.Close()
 		_ = outfile.Close()
 	}()
 
+	var cmdString string
+	if lang == "java" {
+		cmdString = "java Solution"
+	} else if lang == "python" {
+		cmdString = "python solution.py"
+	} else {
+		log.Fatal("Language error")
+	}
+
 	// prepare command
-	cmd := exec.Command(solution)
+	cmd := exec.Command("sh", "-c", cmdString)
 	cmd.Stdin = infile
 	cmd.Stdout = outfile
 	cmd.Stderr = &errbuf
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
+	}
+	cmd.Env = []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin:/usr/lib/jvm/zulu11/bin",
+		"JAVA_HOME=/usr/lib/jvm/zulu11",
 	}
 
 	// TLE terminator
@@ -68,6 +79,7 @@ func runner() {
 	// run source
 	startTime := time.Now().UnixMicro() / 1000
 	if err := cmd.Run(); err != nil {
+		log.Println(errbuf.String())
 		log.Println(err)
 		if strings.HasSuffix(err.Error(), "signal: aborted") {
 			e = 1
@@ -86,13 +98,23 @@ func runner() {
 	_, _ = os.Stdout.Write(j)
 }
 
+// before you run do this process
+// 1. make directory : /tmp/snowbox
+// 2. get python image from docker : docker export $(docker create python:3-slim) | tar -C /tmp/snowbox -xzv -
+// 3. download and install java11 : /usr/lib/jvm/zulu11
 func main() {
+	lang := os.Args[1]
+
 	var outbuf bytes.Buffer
 
 	// add to cgroup
 	initCGroup(os.Getpid())
 	log.Printf("[%d] current namespace. parent=%d\n", os.Getpid(), os.Getppid())
-	cmd := reexec.Command("runner", "/main", "5000")
+
+	// clone target function
+	// https://manpages.ubuntu.com/manpages/focal/en/man2/clone.2.html
+	// reexec is implementation of clone (maybe)
+	cmd := reexec.Command("runner", lang, "1500")
 	cmd.Stdout = &outbuf
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -135,15 +157,29 @@ func initCGroup(pid int) {
 	pidStr := strconv.Itoa(pid)
 	defaultPath := "/sys/fs/cgroup/memory/sandg/"
 
-	// write to mem limit to file
-	_ = os.WriteFile(defaultPath+"memory.kmem.limit_in_bytes", []byte("256m"), 0644)
-	e3 := os.WriteFile(defaultPath+"memory.limit_in_bytes", []byte("256m"), 0644)
-	if e3 != nil {
-		log.Fatal("e3 " + e3.Error())
+	// write memory size
+	prevSizeStr, e := os.ReadFile(defaultPath + "memory.limit_in_bytes")
+	if e != nil {
+		log.Fatal("Read prev size: " + e.Error())
 	}
-	e2 := os.WriteFile(defaultPath+"memory.memsw.limit_in_bytes", []byte("256m"), 0644)
-	if e2 != nil {
-		log.Fatal("e2 " + e2.Error())
+	prevSize, _ := strconv.Atoi(string(prevSizeStr))
+	var updateOrder []string
+	if prevSize > 256*1024*1024 {
+		// bigger
+		updateOrder = []string{"memory.kmem.limit_in_bytes", "memory.memsw.limit_in_bytes", "memory.limit_in_bytes"}
+	} else {
+		// smaller
+		updateOrder = []string{"memory.kmem.limit_in_bytes", "memory.limit_in_bytes", "memory.memsw.limit_in_bytes"}
 	}
-	_ = os.WriteFile(defaultPath+"tasks", []byte(pidStr), 0644)
+
+	for _, f := range updateOrder {
+		if e := os.WriteFile(defaultPath+f, []byte("256m"), 0644); e != nil {
+			log.Fatal("Write " + f + ": " + e.Error())
+		}
+	}
+
+	// write pid
+	if e := os.WriteFile(defaultPath+"tasks", []byte(pidStr), 0644); e != nil {
+		log.Fatal("Write tasks: " + e.Error())
+	}
 }
