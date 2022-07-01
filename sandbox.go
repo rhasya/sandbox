@@ -32,7 +32,6 @@ func init() {
 }
 
 func runner() {
-	log.Println("Init namespace")
 	ns.InitNamespace("/tmp/snowbox")
 
 	lang := os.Args[1]
@@ -82,7 +81,7 @@ func runner() {
 		log.Println("error msg: " + err.Error())
 		if strings.HasSuffix(err.Error(), "status 130") {
 			e = 1
-		} else if strings.HasSuffix(err.Error(), "status 137") {
+		} else if strings.HasSuffix(err.Error(), "status 137") || strings.HasSuffix(err.Error(), "killed") {
 			e = 2
 		} else {
 			e = 3
@@ -97,25 +96,20 @@ func runner() {
 	_, _ = os.Stdout.Write(j)
 }
 
-// before you run do this process
-// 1. make directory : /tmp/snowbox
-// 2. get python image from docker : docker export $(docker create python:3-slim) | tar -C /tmp/snowbox -xzv -
-// 3. download and install java11 : /usr/lib/jvm/zulu11
 func main() {
 	lang := os.Args[1]
 
-	var outbuf bytes.Buffer
+	var outbuf, errbuf bytes.Buffer
 
 	// add to cgroup
 	initCGroup(os.Getpid())
-	log.Printf("[%d] current namespace. parent=%d\n", os.Getpid(), os.Getppid())
 
 	// clone target function
 	// https://manpages.ubuntu.com/manpages/focal/en/man2/clone.2.html
 	// reexec is implementation of clone (maybe)
 	cmd := reexec.Command("runner", lang, "1500")
 	cmd.Stdout = &outbuf
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = &errbuf
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWIPC |
 			syscall.CLONE_NEWNET |
@@ -154,7 +148,7 @@ func main() {
 
 func initCGroup(pid int) {
 	pidStr := strconv.Itoa(pid)
-	defaultPath := "/sys/fs/cgroup/memory/sandg/"
+	defaultPath := "/sys/fs/cgroup/memory/snowbox/"
 
 	if e := os.WriteFile(defaultPath+"memory.limit_in_bytes", []byte("256m"), 0644); e != nil {
 		log.Fatal("Write memory.limit_in_bytes: " + e.Error())
