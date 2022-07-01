@@ -13,11 +13,6 @@ func InitNamespace(newRoot string) {
 	if e := syscall.Sethostname([]byte("snowbox")); e != nil {
 		log.Fatal("SetHostname: " + e.Error())
 	}
-
-	// move to working directory
-	//if e := os.Chdir("/tmp/snowbox"); e != nil {
-	//	log.Fatal("Chdir: " + e.Error())
-	//}
 }
 
 func pivotRoot(newRoot string) {
