@@ -36,10 +36,12 @@ func runner() {
 
 	lang := os.Args[1]
 	timeLimit, _ := strconv.Atoi(os.Args[2])
+	input := os.Args[3]
+	answer := os.Args[4]
 
 	var errbuf bytes.Buffer
-	infile, _ := os.OpenFile("/tmp/input.txt", os.O_RDONLY, 0644)
-	outfile, _ := os.OpenFile("/tmp/output.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	infile, _ := os.OpenFile(input, os.O_RDONLY, 0644)
+	outfile, _ := os.OpenFile(answer, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 
 	defer func() {
 		_ = infile.Close()
@@ -98,16 +100,20 @@ func runner() {
 
 func main() {
 	lang := os.Args[1]
+	timeLimit := os.Args[2]
+	memLimit := os.Args[3]
+	input := os.Args[4]
+	answer := os.Args[5]
 
 	var outbuf, errbuf bytes.Buffer
 
 	// add to cgroup
-	initCGroup(os.Getpid())
+	initCGroup(os.Getpid(), memLimit)
 
 	// clone target function
 	// https://manpages.ubuntu.com/manpages/focal/en/man2/clone.2.html
 	// reexec is implementation of clone (maybe)
-	cmd := reexec.Command("runner", lang, "1500")
+	cmd := reexec.Command("runner", lang, timeLimit, input, answer)
 	cmd.Stdout = &outbuf
 	cmd.Stderr = &errbuf
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -146,11 +152,11 @@ func main() {
 	}
 }
 
-func initCGroup(pid int) {
+func initCGroup(pid int, memLimit string) {
 	pidStr := strconv.Itoa(pid)
 	defaultPath := "/sys/fs/cgroup/memory/snowbox/"
 
-	if e := os.WriteFile(defaultPath+"memory.limit_in_bytes", []byte("256m"), 0644); e != nil {
+	if e := os.WriteFile(defaultPath+"memory.limit_in_bytes", []byte(memLimit), 0644); e != nil {
 		log.Fatal("Write memory.limit_in_bytes: " + e.Error())
 	}
 	if e := os.WriteFile(defaultPath+"memory.swappiness", []byte("0"), 0644); e != nil {
