@@ -47,17 +47,16 @@ func runner() {
 		_ = outfile.Close()
 	}()
 
-	var cmdString string
+	var cmd *exec.Cmd
 	if lang == "java" {
-		cmdString = "java Solution"
+		cmd = exec.Command("/usr/lib/jvm/zulu11/bin/java", "Solution")
 	} else if lang == "python" {
-		cmdString = "python solution.py"
+		cmd = exec.Command("python", "solution.py")
 	} else {
 		log.Fatal("Language error")
 	}
 
 	// prepare command
-	cmd := exec.Command("sh", "-c", cmdString)
 	cmd.Stdin = infile
 	cmd.Stdout = outfile
 	cmd.Stderr = &errbuf
@@ -70,20 +69,20 @@ func runner() {
 	}
 
 	// TLE terminator
-	time.AfterFunc(time.Duration(timeLimit)*time.Millisecond, func() {
-		_ = syscall.Kill(cmd.Process.Pid, syscall.SIGABRT)
-	})
 
 	e := 0
 
 	// run source
+	time.AfterFunc(time.Duration(timeLimit)*time.Millisecond, func() {
+		_ = syscall.Kill(cmd.Process.Pid, syscall.SIGINT)
+	})
+
 	startTime := time.Now().UnixMicro() / 1000
 	if err := cmd.Run(); err != nil {
-		log.Println(errbuf.String())
-		log.Println(err)
-		if strings.HasSuffix(err.Error(), "signal: aborted") {
+		log.Println("error msg: " + err.Error())
+		if strings.HasSuffix(err.Error(), "status 130") {
 			e = 1
-		} else if strings.HasSuffix(err.Error(), "signal: killed") {
+		} else if strings.HasSuffix(err.Error(), "status 137") {
 			e = 2
 		} else {
 			e = 3
@@ -157,27 +156,12 @@ func initCGroup(pid int) {
 	pidStr := strconv.Itoa(pid)
 	defaultPath := "/sys/fs/cgroup/memory/sandg/"
 
-	// write memory size
-	prevSizeStr, e := os.ReadFile(defaultPath + "memory.limit_in_bytes")
-	if e != nil {
-		log.Fatal("Read prev size: " + e.Error())
+	if e := os.WriteFile(defaultPath+"memory.limit_in_bytes", []byte("256m"), 0644); e != nil {
+		log.Fatal("Write memory.limit_in_bytes: " + e.Error())
 	}
-	prevSize, _ := strconv.Atoi(string(prevSizeStr))
-	var updateOrder []string
-	if prevSize > 256*1024*1024 {
-		// bigger
-		updateOrder = []string{"memory.kmem.limit_in_bytes", "memory.memsw.limit_in_bytes", "memory.limit_in_bytes"}
-	} else {
-		// smaller
-		updateOrder = []string{"memory.kmem.limit_in_bytes", "memory.limit_in_bytes", "memory.memsw.limit_in_bytes"}
+	if e := os.WriteFile(defaultPath+"memory.swappiness", []byte("0"), 0644); e != nil {
+		log.Fatal("Write memory.swappiness: " + e.Error())
 	}
-
-	for _, f := range updateOrder {
-		if e := os.WriteFile(defaultPath+f, []byte("256m"), 0644); e != nil {
-			log.Fatal("Write " + f + ": " + e.Error())
-		}
-	}
-
 	// write pid
 	if e := os.WriteFile(defaultPath+"tasks", []byte(pidStr), 0644); e != nil {
 		log.Fatal("Write tasks: " + e.Error())
